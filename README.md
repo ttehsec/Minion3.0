@@ -36,9 +36,13 @@ Minion is a beginner-friendly, CTF-ready security toolkit that helps you decode 
 ### Log Analysis Engine
 
 - Grep | Cut | AWK | Sort | Uniq builder
-- Live preview and clipboard export
-- Smart delimiter selection + custom support
-- Inline syntax help and results stream view
+- Smart delimiter selection, including custom delimiters
+- Inline syntax tips and usage examples
+- Real-time output streaming into the GUI during execution
+
+
+
+
 
 ### Learner Tools
 
