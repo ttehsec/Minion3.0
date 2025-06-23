@@ -20,7 +20,13 @@ Minion is a beginner-friendly, CTF-ready security toolkit that helps you decode 
 
 ### Forensics & Decoding
 
-- Base64, Hex, Binary, Base85, URL, Caesar Shifts, ROT13, Atbash
+- Decode layers of Base64, Hex, Binary, Base85, URL, and classical ciphers: Caesar (±1–13), ROT13, Atbash
+- Recursive decoding chains with scoring and confidence ranking
+- Real word detection using Kali-native wordlists
+- Metadata Extraction with exiftool
+- Embedded File Analysis using binwalk
+- File Signature Identification via the file utility
+- Deduplication, transform trail tracking, and readability scoring
 - Recursive decoding paths with auto-prioritized scoring
 - Real word detection via built-in Kali wordlist
 - Color-coded confidence: ✅ `[✓]` `[~]`
@@ -58,4 +64,4 @@ Minion is a beginner-friendly, CTF-ready security toolkit that helps you decode 
 ```bash
 [git clone https://github.com/ttehsec/Minion3.0.git]
 cd minion
-python3 minion.py
+python3 minionGUI.py
