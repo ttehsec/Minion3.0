@@ -626,6 +626,7 @@ def open_terminal():
 
 
 
+
 #****NMAP Function****
          
 
@@ -634,7 +635,6 @@ def run_command(command):
     global current_process, progress_var
 
     log_command(command)
-    nmap_clear_output()
     nmap_output_text.insert(tk.END, f"Running: {command}\n\n")
     nmap_output_text.update()
 
@@ -652,6 +652,9 @@ def run_command(command):
     except Exception as e:
         nmap_output_text.insert(tk.END, f"Error: {str(e)}\n")
 
+def get_nmap_port_range():
+    user_ports = nmap_port_entry.get().strip()
+    return f"-p {user_ports}" if user_ports else "-p-"
 
 
 def nmap_update_progress_tracker(command, estimated_time):
@@ -694,7 +697,6 @@ def nmap_update_progress_tracker(command, estimated_time):
     progress_var.set(100)
     nmap_output_text.insert(tk.END, "\n✅ Scan completed!\n")
     nmap_output_text.update_idletasks()
-
 
 
 def estimate_scan_time(command):
@@ -744,7 +746,6 @@ def nmap_cancel_scan():
         nmap_output_text.update_idletasks()
 
 
-
 def stream_command_output(process):
     """Reads process output asynchronously to prevent GUI freeze."""
     for line in iter(process.stdout.readline, ''):
@@ -757,14 +758,13 @@ def stream_command_output(process):
     messagebox.showinfo("Scan Complete", "✅ Nmap scan finished successfully!")
     progress_var.set(100)  # Set progress bar to complete
 
-
-
 def nmap_clear_output():
     """ Clear scan results """
     nmap_output_text.delete("1.0", tk.END)
     nmap_manual_entry.delete(0, tk.END)  # Clear manual command input
     nmap_ip_entry.delete(0, tk.END)  # Clear IP input
-    
+    nmap_port_entry.delete(0, tk.END) 
+
 def run_manual_scan():
     """ Execute custom Nmap command from user input """
     nmap_custom_command = nmap_manual_entry.get().strip()
@@ -772,6 +772,8 @@ def run_manual_scan():
         messagebox.showwarning("Invalid Input", "Please enter a valid Nmap command.")
         return
     run_command(nmap_custom_command)
+
+
 
 
 # *****SMB Functions*****
@@ -785,7 +787,8 @@ def run_smb(command, full_enum=False):
             "Full Enumeration Warning",
             "⚠️ This scan may take a while. Please allow it to complete before continuing.\n\n"
             "Estimated scan time: **5-10 minutes** (depending on target size).\n\n"
-            "You will be notified once the scan is finished.\n\n"
+            "You will be notified once the scan is finished.\n\n" 
+            "Cancel SMB Scan will not work with this scan.\n\n"
             "Do you want to proceed?"
         )
 
@@ -813,24 +816,6 @@ def run_smb(command, full_enum=False):
 
 stop_event = threading.Event()  # Global stop event
 
-def smb_update_progress_tracker():
-    """Tracks scan progress but stops immediately if scan is completed or canceled."""
-    estimated_time = 600  # Approx 10 minutes
-    interval = estimated_time // 10  # Update every 60 seconds
-
-    for i in range(10):
-        if stop_event.is_set() or smb_process is None:  # Stop if scan finishes
-            smb_output_text.insert(tk.END, "\n⏳ Scan progress has been forcibly halted.\n")
-            smb_output_text.update_idletasks()
-            return  # Exit loop when process ends
-
-        time.sleep(interval)
-        smb_output_text.insert(tk.END, f"\n⏳ Progress: {((i+1)*10)}% completed...\n")
-        smb_output_text.update_idletasks()
-
-    smb_output_text.insert(tk.END, "\n✅ Scan nearing completion...\n")
-    smb_output_text.update_idletasks()
-
 
 def stream_smb_output(process):
     """Reads and updates SMB output asynchronously to prevent GUI freeze."""
@@ -842,15 +827,37 @@ def stream_smb_output(process):
     process.wait()
 
     messagebox.showinfo("Scan Complete", "✅ SMB enumeration scan finished successfully!")
+    
 
+def smb_update_progress_tracker():
+    """Tracks SMB scan progress and terminates immediately when canceled."""
+    estimated_time = 10  # Total duration in seconds
+    updates = 1  # Update 10 times (every 10%)
+    total_intervals = estimated_time // updates
+    check_interval = 1  # Check every 1 second
 
-'''def smb_manual_scan():
-    """ Execute custom Nmap command from user input """
-    smb_custom_command = smb_manual_entry.get().strip()
-    if not smb_custom_command:
-        messagebox.showwarning("Invalid Input", "Please enter a valid SMB command.")
-        return
-    run_smb(smb_custom_command)'''
+    progress = 0
+    elapsed = 0
+
+    while progress < updates:
+        if stop_event.is_set() or smb_process is None:
+            smb_output_text.insert(tk.END, "\n⏳ Scan progress has been forcibly halted.\n")
+            smb_output_text.update_idletasks()
+            return
+
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+        # Update progress every full interval
+        if elapsed >= total_intervals:
+            progress += 1
+            smb_output_text.insert(tk.END, f"\n⏳ Progress: {progress * 10}% completed...\n")
+            smb_output_text.update_idletasks()
+            elapsed = 0
+
+    smb_output_text.insert(tk.END, "\n✅ Scan nearing completion...\n")
+    smb_output_text.update_idletasks()
+
 
 def smb_clear_output():
     """ Clear scan results """
@@ -868,6 +875,8 @@ def connect_smb():
     smb_share = smb_share_entry.get().strip()
     smb_user = smb_user_entry.get().strip()
     smb_pass = smb_pass_entry.get().strip()
+    smb_enum_command = smb_enum_command_entry.get().strip()
+
 
     # Validate user input fields (Ensuring IP & Share are provided)
     if not smb_ip or not smb_share or not smb_user:
@@ -883,9 +892,9 @@ def connect_smb():
 
     # Execute SMB command (Switch to --no-pass if password is missing)
     if smb_pass:
-        command_to_run = f"smbclient -N -U '{smb_user}%{smb_pass}' //{smb_ip}/{smb_share} -c '{smb_command if smb_command else 'ls'}'"
+        command_to_run = f"smbclient -N -U '{smb_user}%{smb_pass}' //{smb_ip}/{smb_share} -c '{smb_enum_command if smb_enum_command else 'ls'}'"
     else:
-        command_to_run = f"smbclient --no-pass //{smb_ip}/{smb_share} -c '{smb_command if smb_command else 'ls'}'"
+        command_to_run = f"smbclient --no-pass //{smb_ip}/{smb_share} -c '{smb_enum_command if smb_enum_command else 'ls'}'"
 
     run_smb(command_to_run)  # Execute the command via SMB handler
 
@@ -1199,37 +1208,72 @@ def select_save_location():
         save_location_entry.insert(0, save_path)
 
 def run_wordlist():
-    """ Execute Hashcat wordlist modification and save to user-defined location """
+    """Execute Hashcat wordlist modification using rule file and save output to user-defined location."""
     global wordlist_process
-    wordlist_output_text.delete("1.0", tk.END)  # Clear previous output
 
+    # Clear previous output in the text widget
+    wordlist_output_text.delete("1.0", tk.END)
+
+    # Get file paths from entry fields
     wordlist = wordlist_entry.get().strip()
     rulefile = rulefile_entry.get().strip()
     save_location = save_location_entry.get().strip()
 
+    # Validate input
     if not wordlist or not rulefile or not save_location:
-        messagebox.showwarning("Invalid Input", "Please select a wordlist, rule file, and save location.")
+        messagebox.showwarning("Invalid Input", "⚠️ Please select a wordlist, rule file, and save location.")
         return
 
-    cmd = f"hashcat --stdout {wordlist} -r {rulefile} > \"{save_location}\""
-    log_command(command)
-    
+    # Build command
+    cmd = f'hashcat --stdout "{wordlist}" -r "{rulefile}"'
 
+    # Spawn subprocess and redirect stdout to both GUI and file
     try:
-        wordlist_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Open output file handle
+        output_file = open(save_location, "w")
 
-        for line in iter(wordlist_process.stdout.readline, ''):
-            wordlist_output_text.insert(tk.END, line)
-            wordlist_output_text.update()
+        wordlist_process = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
 
-        wordlist_process.stdout.close()
-        wordlist_process.wait()
-        messagebox.showinfo("Process Complete", f"Wordlist modification saved to: {save_location}")
+        def stream_wordlist_output(process):
+            """Stream stdout and stderr to GUI and write to file."""
+            while True:
+                output_line = process.stdout.readline()
+                error_line = process.stderr.readline()
 
-        wordlist_process = None
+                if not output_line and not error_line and process.poll() is not None:
+                    break
+
+                if output_line:
+                    wordlist_output_text.insert(tk.END, output_line)
+                    wordlist_output_text.update()
+                    output_file.write(output_line)
+
+                if error_line:
+                    wordlist_output_text.insert(tk.END, error_line)
+                    wordlist_output_text.update()
+
+            process.stdout.close()
+            process.stderr.close()
+            process.wait()
+            output_file.close()
+
+            global wordlist_process
+            wordlist_process = None
+            messagebox.showinfo("Complete", f"✅ Wordlist modification saved to: {save_location}")
+
+        # Launch streaming in background
+        threading.Thread(target=lambda: stream_wordlist_output(wordlist_process), daemon=True).start()
 
     except Exception as e:
-        wordlist_output_text.insert(tk.END, f"Error: {str(e)}\n")
+        wordlist_output_text.insert(tk.END, f"❌ Error: {str(e)}\n")
+        wordlist_output_text.update()
+
 
 def select_wordlist():
     """ Allow user to browse for a wordlist file """
@@ -1432,6 +1476,37 @@ def segment_wordlist():
 
 
 
+def stream_wordlist_output(process):
+    """Stream stdout and stderr from the wordlist process into the GUI text box."""
+    wordlist_output_text.delete("1.0", tk.END)
+
+    while True:
+        output_line = process.stdout.readline()
+        error_line = process.stderr.readline()
+
+        if not output_line and not error_line and process.poll() is not None:
+            break
+
+        if output_line:
+            wordlist_output_text.insert(tk.END, output_line)
+        if error_line:
+            wordlist_output_text.insert(tk.END, error_line)
+
+        wordlist_output_text.see(tk.END)
+        wordlist_output_text.update()
+
+    process.stdout.close()
+    process.stderr.close()
+    process.wait()
+
+    global wordlist_process
+    wordlist_process = None
+    messagebox.showinfo("Complete", "✅ Wordlist modification is finished and saved.")
+
+
+
+
+
 #Password Cracking
 
 def start_crack(crack_function):
@@ -1475,9 +1550,10 @@ def cracking_clear_output():
     protocol_entry.delete(0, tk.END)
     user_wordlist_entry.delete(0, tk.END)
     password_wordlist_entry.delete(0, tk.END)
-    hashcat_command_entry.delete(0, tk.END)
+    #hashcat_command_entry.delete(0, tk.END)
     hash_mode_entry.delete(0, tk.END)
     hashcat_mask_entry.delete(0, tk.END)
+    cracking_port_entry.delete(0, tk.END)
 
 def cracking_cancel_scan():
     """Safely stops any running password-cracking process (Hydra, John, Hashcat, CrackMapExec) asynchronously."""
@@ -1793,6 +1869,27 @@ def run_crackmap():
     user_wordlist = user_wordlist_entry.get().strip()
     password_wordlist = password_wordlist_entry.get().strip()
     port = cracking_port_entry.get().strip()  #  Added optional port field
+   # Optional CME flags from checkboxes
+    optional_flags = []
+    if local_auth_var.get():
+        optional_flags.append("--local-auth")
+    if shares_var.get():
+        optional_flags.append("--shares")
+    if sessions_var.get():
+        optional_flags.append("--sessions")
+    if passpol_var.get():
+        optional_flags.append("--pass-pol")
+    if lsa_var.get():
+        optional_flags.append("--lsa")
+    if sam_var.get():
+        optional_flags.append("--sam")
+    if exec_var.get():
+        optional_flags.append("--exec 'calc.exe'")  # Or make this dynamic with an Entry field
+
+    extra_options = " ".join(optional_flags)
+
+
+
 
     if not protocol or not cracking_ip or not user_wordlist or not password_wordlist:
         messagebox.showerror("Input Error", "Please enter a protocol, IP, user or wordlist, and password or wordlist before running.")
@@ -1802,7 +1899,10 @@ def run_crackmap():
     port_option = f"--port {port}" if port else ""  
 
     # **Updated command construction to handle optional port**
-    cmd = f"crackmapexec {protocol} {cracking_ip} {port_option} -u {user_wordlist} -p {password_wordlist}"
+    cmd = f"crackmapexec {protocol} {cracking_ip} {port_option} {extra_options} -u {user_wordlist} -p {password_wordlist}"
+
+
+
 
     status_thread = threading.Thread(target=lambda: update_cme_status("CrackMapExec"), daemon=True)
     status_thread.start()
@@ -1895,10 +1995,6 @@ def run_hashcat():
         cracking_output_text.insert(tk.END, f"🔥 Error launching Hashcat:\n{str(e)}\n")
 
 
-
-
-
-
 def stream_output(process):
     cracking_output_text.delete("1.0", tk.END)
 
@@ -1925,7 +2021,6 @@ def stream_output(process):
     global cracking_process
     cracking_process = None
     root.after(0, lambda: messagebox.showinfo("Scan Complete", "Password Cracking has finished Processing"))
-
 
 
 
@@ -2825,10 +2920,17 @@ forensics_base_frame
 
 # **IP Entry Fields for Each Scanner**
 #nmap
+tk.Label(nmap_menu_frame, text="Enter Target IP:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 nmap_ip_entry = tk.Entry(nmap_menu_frame, width=50)
 nmap_ip_entry.pack(pady=5)
 
+tk.Label(nmap_menu_frame, text="Target Ports (optional, e.g. 22,80,443 or 1-1000):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+nmap_port_entry = tk.Entry(nmap_menu_frame, width=50, bg="#333333", fg="white")
+nmap_port_entry.pack(pady=5)
+
+
 #smb
+tk.Label(smb_menu_frame, text="Enter Target IP:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 smb_ip_entry = tk.Entry(smb_menu_frame, width=50)
 smb_ip_entry.pack()
 
@@ -2837,6 +2939,8 @@ tk.Label(gobuster_menu_frame, text="Enter Target (IP/URL/Domain):", font=("Arial
 gobuster_ip_entry = tk.Entry(gobuster_menu_frame, width=50)
 gobuster_ip_entry.pack()
 
+
+tk.Label(cracking_menu_frame, text="Enter IP Address:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 cracking_ip_entry = tk.Entry(cracking_menu_frame, width=50)
 cracking_ip_entry.pack()
 
@@ -2845,24 +2949,29 @@ cracking_ip_entry.pack()
 # **Grouped Scan Options**
 
 # Nmap Section
-tk.Label(nmap_menu_frame, text="Enter Target IP:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 
-tk.Label(nmap_menu_frame, text="🔵 Basic Scan → Performs a quick stealth SYN scan (-sS -p-) across all ports", font=("Arial", 14, "bold"), fg="#64B5F6", bg="#0A192F").pack()
-tk.Button(nmap_menu_frame, text="Stealth Scan (Full Ports)", command=lambda: run_command(f"nmap -n -sS -p- --min-rate=5000 {nmap_ip_entry.get()}"), width=50, height=2, bg="#2196F3", fg="white").pack(pady=5)
 
-tk.Label(nmap_menu_frame, text="🟠 Script Scan → Runs default Nmap scripts (-sV -sC -p-) on all ports. ", font=("Arial", 14, "bold"), fg="#FF9800", bg="#0A192F").pack()
-tk.Button(nmap_menu_frame, text="Service & Script Scan (Full Ports)", command=lambda: run_command(f"nmap -n -sV -sC -p- --min-rate=5000 {nmap_ip_entry.get()}"), width=50, height=2, bg="#FF9800", fg="white").pack(pady=5)
+# --- Basic Stealth Scan ---
+tk.Label(nmap_menu_frame, text="🔵 Basic Scan → Performs a quick stealth SYN scan (-sS)", font=("Arial", 14, "bold"), fg="#64B5F6", bg="#0A192F").pack()
+tk.Button(nmap_menu_frame, text="Stealth Scan (Selected Ports or Full)", command=lambda: run_command(f"nmap -n -sS {get_nmap_port_range()} --min-rate=5000 {nmap_ip_entry.get()}"), width=50, height=2, bg="#2196F3", fg="white").pack(pady=5)
 
-tk.Label(nmap_menu_frame, text="🔴 Script with Detection → Uses aggressive scanning (-A -p-), enabling OS detection, version scanning, default scripts, and traceroute analysis. *High-noise*", font=("Arial", 14, "bold"), fg="#D32F2F", bg="#0A192F").pack()
-tk.Button(nmap_menu_frame, text="Advanced Recon Scan", command=lambda: run_command(f"nmap -A -p- -T4 {nmap_ip_entry.get()}"), width=50, height=2, bg="#D32F2F", fg="white").pack(pady=5)
+# --- Service/Script Scan ---
+tk.Label(nmap_menu_frame, text="🟠 Script Scan → Runs default scripts (-sV -sC)", font=("Arial", 14, "bold"), fg="#FF9800", bg="#0A192F").pack()
+tk.Button(nmap_menu_frame, text="Service & Script Scan (Selected Ports or Full)", command=lambda: run_command(f"nmap -n -sV -sC {get_nmap_port_range()} --min-rate=5000 {nmap_ip_entry.get()}"), width=50, height=2, bg="#FF9800", fg="white").pack(pady=5)
+
+# --- Aggressive Advanced Recon ---
+tk.Label(nmap_menu_frame, text="🔴 Script with Detection → Aggressive scan with OS detection (-A)", font=("Arial", 14, "bold"), fg="#D32F2F", bg="#0A192F").pack()
+tk.Button(nmap_menu_frame, text="Advanced Recon Scan (Selected Ports or Full)",command=lambda: run_command(f"nmap -A {get_nmap_port_range()} -T4 {nmap_ip_entry.get()}"), width=50, height=2, bg="#D32F2F", fg="white").pack(pady=5)
 
 
 
 # **Manual Scan Option**
 
-tk.Label(nmap_menu_frame, text="🔹 Custom Nmap Command:", font=("Arial", 14, "bold")).pack()
+tk.Label(nmap_menu_frame, text="🔹 Custom Nmap Command:e.g. nmap -sU -F 10.10.10.10", font=("Arial", 14, "bold")).pack()
 nmap_manual_entry = tk.Entry(nmap_menu_frame, width=50)
 nmap_manual_entry.pack(pady=5)  
+
+#*Nmap status bar*
 
 
 progress_var = tk.IntVar()
@@ -2872,7 +2981,7 @@ progress_bar.pack(pady=5)
 
 
 nmap_nav_buttons_frame = tk.Frame(nmap_menu_frame, bg="#0A192F")
-nmap_nav_buttons_frame.pack(pady=10)
+nmap_nav_buttons_frame.pack(pady=5)
 
 tk.Button(nmap_nav_buttons_frame, text="Run Custom Scan", command=run_manual_scan, width=15, height=2, bg="#673AB7", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(nmap_nav_buttons_frame, text="Cancel Scan", command=nmap_cancel_scan, width=15, height=2, bg="#D32F2F", fg="white").pack(side=tk.LEFT, padx=5)
@@ -2887,7 +2996,6 @@ tk.Button(nmap_nav_back_buttons_frame, text="Core Offensive Security Menu", comm
 
 
 # *****SMB Section*****
-tk.Label(smb_menu_frame, text="Enter Target IP:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 tk.Label(smb_menu_frame, text="🔵 List Shares", font=("Arial", 14, "bold"), fg="#64B5F6", bg="#0A192F").pack()
 
 
@@ -2900,17 +3008,48 @@ tk.Button(listshares_nav_buttons_frame, text="Full Enumeration", command=lambda:
 
 # SMB Connection Section
 tk.Label(smb_menu_frame, text="🔴 Connect to SMB", font=("Arial", 14, "bold"), fg="#64B5F6", bg="#0A192F").pack()
-tk.Label(smb_menu_frame, text="Enter Share:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-smb_share_entry = tk.Entry(smb_menu_frame, width=50, bg="#333333", fg="white")
+
+
+
+# Container for SMB Credentials
+smb_inputs_frame = tk.Frame(smb_menu_frame, bg="#0A192F")
+smb_inputs_frame.pack(pady=10)
+
+# === Share Column ===
+smb_share_col = tk.Frame(smb_inputs_frame, bg="#0A192F")
+smb_share_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(smb_share_col, text="Enter Share:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+smb_share_entry = tk.Entry(smb_share_col, width=30, bg="#333333", fg="white")
 smb_share_entry.pack(pady=3)
 
-tk.Label(smb_menu_frame, text="Enter User:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-smb_user_entry = tk.Entry(smb_menu_frame, width=50, bg="#333333", fg="white")
+# === User Column ===
+smb_user_col = tk.Frame(smb_inputs_frame, bg="#0A192F")
+smb_user_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(smb_user_col, text="Enter User:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+smb_user_entry = tk.Entry(smb_user_col, width=30, bg="#333333", fg="white")
 smb_user_entry.pack(pady=3)
 
-tk.Label(smb_menu_frame, text="Enter Password:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-smb_pass_entry = tk.Entry(smb_menu_frame, width=50, bg="#333333", fg="white", show="*")  # Mask password input
+# === Password Column ===
+smb_pass_col = tk.Frame(smb_inputs_frame, bg="#0A192F")
+smb_pass_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(smb_pass_col, text="Enter Password:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+smb_pass_entry = tk.Entry(smb_pass_col, width=30, bg="#333333", fg="white", show="*")
 smb_pass_entry.pack(pady=3)
+
+
+# === SMB Custom Command Entry ===
+smb_cmd_col = tk.Frame(smb_inputs_frame, bg="#0A192F")
+smb_cmd_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(smb_cmd_col, text="Custom Command (e.g. ls or get id_rsa):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+smb_enum_command_entry = tk.Entry(smb_cmd_col, width=30, bg="#333333", fg="white")
+smb_enum_command_entry.insert(0, "ls")  # Default to listing directory
+smb_enum_command_entry.pack(pady=3)
+
+
 
 # Add an entry box for custom SMB commands
 tk.Label(smb_menu_frame, text="Custom SMB Command: ", font=("Arial", 12, "bold"), fg="white", bg="#0A192F").pack()
@@ -2937,24 +3076,40 @@ tk.Button(smb_nav_back_buttons_frame, text="Core Offensive Security Menu", comma
 # *****Gobuster Section*****
 
 # Gobuster Mode Selection
-tk.Label(gobuster_menu_frame, text="Gobuster Mode:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+tk.Label(gobuster_menu_frame, text="Gobuster Mode:e.g. dir, dns, fuzz, etc.", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 gobuster_mode_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
 gobuster_mode_entry.pack()
 
-# Gobuster Protocol Selection
-tk.Label(gobuster_menu_frame, text="Protocol (http/https):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-gobuster_protocol_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
-gobuster_protocol_entry.pack()
 
-# Gobuster Port Selection
-tk.Label(gobuster_menu_frame, text="Port (Optional):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-gobuster_port_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
-gobuster_port_entry.pack()
+
+# Container Frame for Gobuster Input Grouping
+gobuster_input_frame = tk.Frame(gobuster_menu_frame, bg="#0A192F")
+gobuster_input_frame.pack(pady=10)
+
+# === Protocol Column ===
+protocol_col = tk.Frame(gobuster_input_frame, bg="#0A192F")
+protocol_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(protocol_col, text="Protocol (http/https):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+gobuster_protocol_entry = tk.Entry(protocol_col, width=30, bg="#333333", fg="white")
+gobuster_protocol_entry.pack(pady=3)
+
+# === Port Column ===
+port_col = tk.Frame(gobuster_input_frame, bg="#0A192F")
+port_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(port_col, text="Port (Optional):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+gobuster_port_entry = tk.Entry(port_col, width=30, bg="#333333", fg="white")
+gobuster_port_entry.pack(pady=3)
+
+
 
 # Gobuster Wordlist Selection
 tk.Label(gobuster_menu_frame, text="Select Wordlist:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 gobuster_wordlist_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
 gobuster_wordlist_entry.pack()
+
+
 tk.Button(gobuster_menu_frame, text="Browse", command=lambda: gobuster_select_wordlist(gobuster_wordlist_entry), width=20, height=2, bg="#1565C0", fg="white").pack(pady=5)
 
 # Gobuster Threads Entry
@@ -2962,10 +3117,12 @@ tk.Label(gobuster_menu_frame, text="Threads:", font=("Arial", 12), fg="white", b
 gobuster_threads_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
 gobuster_threads_entry.pack()
 
+
 # Gobuster Output File Entry
 tk.Label(gobuster_menu_frame, text="Output File (Optional):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 gobuster_output_entry = tk.Entry(gobuster_menu_frame, width=50, bg="#333333", fg="white")
 gobuster_output_entry.pack(pady=3)
+
 
 # Action Buttons
 gobuster_nav_buttons_frame = tk.Frame(gobuster_menu_frame, bg="#0A192F")
@@ -2985,25 +3142,39 @@ tk.Button(gobuster_nav_back_buttons_frame, text="Core Offensive Security Menu", 
 
 #*****Create Wordlist*****
 
-# Wordlist Modification
-wordlist_menu_frame = tk.Frame(root, bg="#0A192F")  # Navy Blue Background
 
-tk.Label(wordlist_menu_frame, text="Wordlist Modifier & Generator", font=("Arial", 16, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=5)
 
-tk.Label(wordlist_menu_frame, text="Select Wordlist:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack(pady=5)
-wordlist_entry = tk.Entry(wordlist_menu_frame, width=50, bg="#333333", fg="white")  # Darker input field
-wordlist_entry.pack()
-tk.Button(wordlist_menu_frame, text="Browse", command=select_wordlist, width=50, height=2, bg="#1565C0", fg="white").pack(pady=5)
+# Container for 3 input columns
+wordlist_inputs_frame = tk.Frame(wordlist_menu_frame, bg="#0A192F")
+wordlist_inputs_frame.pack(pady=10)
 
-tk.Label(wordlist_menu_frame, text="Select Rule File:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack(pady=5)
-rulefile_entry = tk.Entry(wordlist_menu_frame, width=50, bg="#333333", fg="white")
-rulefile_entry.pack()
-tk.Button(wordlist_menu_frame, text="Browse", command=select_rulefile, width=50, height=2, bg="#1565C0", fg="white").pack(pady=5)
+# === Wordlist Column ===
+wordlist_col = tk.Frame(wordlist_inputs_frame, bg="#0A192F")
+wordlist_col.pack(side=tk.LEFT, padx=10)
 
-tk.Label(wordlist_menu_frame, text="Select Save Location:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack(pady=5)
-save_location_entry = tk.Entry(wordlist_menu_frame, width=50, bg="#333333", fg="white")
-save_location_entry.pack()
-tk.Button(wordlist_menu_frame, text="Browse", command=select_save_location, width=50, height=2, bg="#1565C0", fg="white").pack(pady=5)
+tk.Label(wordlist_col, text="Select Wordlist:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack()
+wordlist_entry = tk.Entry(wordlist_col, width=30, bg="#333333", fg="white")
+wordlist_entry.pack(pady=3)
+tk.Button(wordlist_col, text="Browse", command=select_wordlist, width=20, height=2, bg="#1565C0", fg="white").pack()
+
+# === Rule File Column ===
+rulefile_col = tk.Frame(wordlist_inputs_frame, bg="#0A192F")
+rulefile_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(rulefile_col, text="Select Rule File:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack()
+rulefile_entry = tk.Entry(rulefile_col, width=30, bg="#333333", fg="white")
+rulefile_entry.pack(pady=3)
+tk.Button(rulefile_col, text="Browse", command=select_rulefile, width=20, height=2, bg="#1565C0", fg="white").pack()
+
+# === Save Location Column ===
+save_col = tk.Frame(wordlist_inputs_frame, bg="#0A192F")
+save_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(save_col, text="Select Save Location:", font=("Arial", 12), fg="#FFFFFF", bg="#0A192F").pack()
+save_location_entry = tk.Entry(save_col, width=30, bg="#333333", fg="white")
+save_location_entry.pack(pady=3)
+tk.Button(save_col, text="Browse", command=select_save_location, width=20, height=2, bg="#1565C0", fg="white").pack()
+
 
 tk.Button(wordlist_menu_frame, text="Create A Modified Wordlist", command=run_wordlist, width=50, height=2, bg="#FF9800", fg="white").pack(pady=8)  # Orange for action
 
@@ -3015,13 +3186,19 @@ tk.Button(wordlist_menu_frame, text="Run Common User Passwords Profiler", comman
 
 
 # Back to Main Menu Button
-tk.Button(wordlist_menu_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=50, height=2, bg="#FFD700", fg="white").pack(pady=8)  # Red for exit/navigation
+
+# Navigation and Output Control Row
+nav_output_frame = tk.Frame(wordlist_menu_frame, bg="#0A192F")
+nav_output_frame.pack(pady=10)
+tk.Button(nav_output_frame, text="Clear Output", command=lambda: wordlist_output_text.delete("1.0", tk.END), width=20, height=2, bg="#D32F2F", fg="white").pack(side=tk.LEFT, padx=5)
+tk.Button(nav_output_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=35, height=2, bg="#FFD700", fg="white").pack(side=tk.LEFT, padx=5)
+
+
 
 
 
 # ******Password Cracking Menu*****
 
-tk.Label(cracking_menu_frame, text="Enter IP Address:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 
 # Frame for Protocol & Port Entries (Ensures Proper Layout)
 protocol_ports_nav_buttons_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
@@ -3113,7 +3290,7 @@ hashcat_options_frame.pack(pady=5)
 attack_mode_frame = tk.Frame(hashcat_options_frame, bg="#0A192F")
 attack_mode_frame.pack(side=tk.LEFT, padx=5)
 
-tk.Label(attack_mode_frame, text="Attack Mode:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+tk.Label(attack_mode_frame, text="Select Hashcat Attack Mode:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 attack_mode = tk.StringVar()
 attack_modes = [
     "0 | Straight", "1 | Combination", "3 | Brute-force",
@@ -3127,7 +3304,7 @@ attack_menu.pack(pady=3)
 hash_mode_frame = tk.Frame(hashcat_options_frame, bg="#0A192F")
 hash_mode_frame.pack(side=tk.LEFT, padx=5)
 
-tk.Label(hash_mode_frame, text="Hash Mode:e.g. 0, 100", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+tk.Label(hash_mode_frame, text="Hash Mode e.g. 0, 100", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 hash_mode_entry = tk.Entry(hash_mode_frame, width=28, bg="#333333", fg="white")
 hash_mode_entry.pack(pady=3)
 
@@ -3164,6 +3341,44 @@ password_wordlist_entry.pack(pady=3)
 tk.Button(pass_wordlist_frame, text="Browse", command=lambda: cracking_pass_wordlist(password_wordlist_entry), width=20, bg="#757575", fg="white").pack()
 
 
+# === CME Extra Options Column ===
+# Title label for CME options
+tk.Label(wordlist_pair_frame, text="CrackMapExec Options", font=("Arial", 12, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=(5, 0))
+
+# Multi-column frame for CME optional flags
+extra_options_frame = tk.Frame(wordlist_pair_frame, bg="#0A192F")
+extra_options_frame.pack(side=tk.LEFT, padx=10, pady=5)
+
+# Create two columns for checkboxes
+left_flags_col = tk.Frame(extra_options_frame, bg="#0A192F")
+left_flags_col.pack(side=tk.LEFT, padx=5)
+
+right_flags_col = tk.Frame(extra_options_frame, bg="#0A192F")
+right_flags_col.pack(side=tk.LEFT, padx=5)
+
+# Define flag variables
+local_auth_var = tk.BooleanVar()
+shares_var = tk.BooleanVar()
+sessions_var = tk.BooleanVar()
+passpol_var = tk.BooleanVar()
+lsa_var = tk.BooleanVar()
+sam_var = tk.BooleanVar()
+exec_var = tk.BooleanVar()
+
+# Pack left column flags
+tk.Checkbutton(left_flags_col, text="--local-auth", variable=local_auth_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+tk.Checkbutton(left_flags_col, text="--shares", variable=shares_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+tk.Checkbutton(left_flags_col, text="--sessions", variable=sessions_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+tk.Checkbutton(left_flags_col, text="--pass-pol", variable=passpol_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+
+# Pack right column flags
+tk.Checkbutton(right_flags_col, text="--lsa", variable=lsa_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+tk.Checkbutton(right_flags_col, text="--sam", variable=sam_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+tk.Checkbutton(right_flags_col, text="--exec 'calc.exe'", variable=exec_var, bg="#0A192F", fg="white", selectcolor="#0A192F").pack(anchor="w")
+
+
+
+
 tk.Label(cracking_menu_frame, text="Manual Cracking:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 tool_option_entry = tk.Entry(cracking_menu_frame, width=50, bg="#333333", fg="white", font="bold")
 tool_option_entry.pack()
@@ -3178,17 +3393,8 @@ tk.Button(tools_nav_buttons_frame, text="CrackMapExec", command=lambda: start_cr
 tk.Button(tools_nav_buttons_frame, text="Hashcat", command=lambda: start_crack(run_hashcat), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(tools_nav_buttons_frame, text="Manual Cracking Options", command=lambda: start_crack(custom_crack), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
 
-'''cracking_status_label = tk.Label(cracking_menu_frame, text="Status: ⏳ Waiting for execution...", font=("Arial", 12), fg="yellow", bg="#0A192F")
-cracking_status_label.pack()'''
-
-
-# **Action Buttons**
-#nmap
-'''tk.Button(nmap_menu_frame, text="Cancel Scan", command=cancel_scan, width=50, height=2, bg="#f44336", fg="white").pack(pady=5)'''
-
-
-#smb
-'''tk.Button(smb_menu_frame, text="Cancel Scan", command=cancel_scan, width=50, height=2, bg="#f44336", fg="white").pack(pady=5)'''
+cracking_status_label = tk.Label(cracking_menu_frame, text="Status: ⏳ Waiting for execution...", font=("Arial", 12), fg="yellow", bg="#0A192F")
+cracking_status_label.pack()
 
 
 
@@ -3250,41 +3456,55 @@ tk.Label(forensics_log_frame, text="Grep (optional):", font=("Arial", 12), fg="w
 grep_entry = tk.Entry(forensics_log_frame, width=60, bg="#333333", fg="white")
 grep_entry.pack(pady=2)
 
-# --- CUT ---
 
-tk.Label(forensics_log_frame, text="Cut delimiter:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+# Container Frame for Side-by-Side Layout
+forensics_inputs_frame = tk.Frame(forensics_log_frame, bg="#0A192F")
+forensics_inputs_frame.pack(pady=10)
 
+# === CUT Column ===
+cut_col = tk.Frame(forensics_inputs_frame, bg="#0A192F")
+cut_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(cut_col, text="Cut delimiter:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 cut_delim_var = tk.StringVar()
-cut_delim_var.set("space")  # default
-
-cut_delim_menu = tk.OptionMenu(forensics_log_frame, cut_delim_var, "space", "tab", "comma", "colon", "pipe", "custom")
+cut_delim_var.set("space")
+cut_delim_menu = tk.OptionMenu(cut_col, cut_delim_var, "space", "tab", "comma", "colon", "pipe", "custom")
 cut_delim_menu.config(width=20, bg="#333333", fg="white")
 cut_delim_menu.pack(pady=2)
 
-# Custom delimiter entry (initially hidden unless "custom" is selected)
-custom_delim_entry = tk.Entry(forensics_log_frame, width=10, bg="#333333", fg="white")
+custom_delim_entry = tk.Entry(cut_col, width=10, bg="#333333", fg="white")
 custom_delim_entry.pack(pady=2)
 custom_delim_entry.pack_forget()
 
-tk.Label(forensics_log_frame, text="Cut field(s) (e.g. 1 or 2,3):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-cut_fields_entry = tk.Entry(forensics_log_frame, width=30, bg="#333333", fg="white")
+tk.Label(cut_col, text="Cut field(s) (e.g. 1 or 2,3):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+cut_fields_entry = tk.Entry(cut_col, width=25, bg="#333333", fg="white")
 cut_fields_entry.pack(pady=2)
 
+# === AWK Column ===
+awk_col = tk.Frame(forensics_inputs_frame, bg="#0A192F")
+awk_col.pack(side=tk.LEFT, padx=10)
 
-# --- AWK ---
-tk.Label(forensics_log_frame, text="Awk expression: (e.g. {print $1} or {print $1,$2,$3} )", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-awk_entry = tk.Entry(forensics_log_frame, width=70, bg="#333333", fg="white")
+tk.Label(awk_col, text="Awk expression: (e.g. {print $1} or {print $1,$2,$3} )", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+awk_entry = tk.Entry(awk_col, width=40, bg="#333333", fg="white")
 awk_entry.pack(pady=2)
 
-# --- SORT ---
-tk.Label(forensics_log_frame, text="Sort option (e.g. -n -r):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-sort_option_entry = tk.Entry(forensics_log_frame, width=30, bg="#333333", fg="white")
+# === SORT Column ===
+sort_col = tk.Frame(forensics_inputs_frame, bg="#0A192F")
+sort_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(sort_col, text="Sort option: (e.g. -n -r):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+sort_option_entry = tk.Entry(sort_col, width=25, bg="#333333", fg="white")
 sort_option_entry.pack(pady=2)
 
-# --- UNIQ ---
-tk.Label(forensics_log_frame, text="Uniq option (e.g. -c -d -u):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-uniq_option_entry = tk.Entry(forensics_log_frame, width=30, bg="#333333", fg="white")
+# === UNIQ Column ===
+uniq_col = tk.Frame(forensics_inputs_frame, bg="#0A192F")
+uniq_col.pack(side=tk.LEFT, padx=10)
+
+tk.Label(uniq_col, text="Uniq option: (e.g. -c -d -u)", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+uniq_option_entry = tk.Entry(uniq_col, width=25, bg="#333333", fg="white")
 uniq_option_entry.pack(pady=2)
+
+
 
 forensics_nav_log_buttons_frame = tk.Frame(forensics_log_frame, bg="#0A192F")
 forensics_nav_log_buttons_frame.pack(pady=10)
@@ -3317,6 +3537,8 @@ tk.Button(forensics_nav_base_buttons_frame, text="Clear", command=forensics_base
 tk.Button(forensics_nav_base_buttons_frame, text="Save Output", command=export_base_output, width=20, height=2, bg="#43A047", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(forensics_nav_base_buttons_frame, text="Back to Forensics Menu", command=lambda: switch_to_frame(forensics_submenu_frame), width=20, height=2, bg="#B71C1C", fg="white").pack(side=tk.LEFT, padx=5)
 
+
+#tk.Button(forensics_log_frame, text="Run Custom Pipeline", command=run_forensics_log_custom_pipeline, width=20, height=2, bg="#29B6F6", fg="white").pack()
 
 
 # Run system check before starting GUI
