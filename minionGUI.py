@@ -1476,6 +1476,8 @@ def cracking_clear_output():
     user_wordlist_entry.delete(0, tk.END)
     password_wordlist_entry.delete(0, tk.END)
     hashcat_command_entry.delete(0, tk.END)
+    hash_mode_entry.delete(0, tk.END)
+    hashcat_mask_entry.delete(0, tk.END)
 
 def cracking_cancel_scan():
     """Safely stops any running password-cracking process (Hydra, John, Hashcat, CrackMapExec) asynchronously."""
@@ -1606,9 +1608,6 @@ def stream_hash_identifier_output(process):
 
     messagebox.showinfo("Process Complete", "✅ Hash-Identifier analysis finished successfully!")
 
-    
-
-
 
 
 def cracking_user_wordlist(entry_widget):
@@ -1630,8 +1629,6 @@ def check_cracking_status(tool_name):
         time.sleep(60)  # Update every 60 seconds
     cracking_status_label.config(text=f"{tool_name} Status: ✅ Completed!", fg="blue")
     cracking_status_label.update()
-
-
 
 
 
@@ -1674,34 +1671,48 @@ def custom_crack():
 
 
 
-
-
 def run_john():
-    """Runs John the Ripper with user-selected wordlist and hash file"""
+    """Runs John the Ripper with dropdown-selected or custom format"""
     global cracking_process
 
-
     wordlist = password_wordlist_entry.get().strip()
-    hash_file = hash_file_entry.get().strip()
+    hash_input = hash_file_entry.get().strip()
 
-    if not wordlist or not hash_file:
-        messagebox.showerror("Input Error", "Please select both a password wordlist and a hash file before running.")
+    if not wordlist or not hash_input:
+        messagebox.showerror("Input Error", "⚠ Please provide both a wordlist and a hash value or hash file.")
         return
 
-    # Update GUI to indicate the process has started
+    # Detect user-selected format
+    selected = selected_format.get()
+    if selected == "Not Listed (Enter Manually)":
+        hash_format = custom_format_entry.get().strip()
+    else:
+        hash_format = selected
+
+    # Determine if the input is a hash or file
+    if os.path.isfile(hash_input):
+        hash_file_to_use = hash_input
+    else:
+        hash_str = hash_input.strip()
+        with open("minion_hash.txt", "w") as f:
+            f.write(hash_str + "\n")
+        hash_file_to_use = "minion_hash.txt"
+
+    # Run John
     cracking_output_text.delete("1.0", tk.END)
-    cracking_output_text.insert(tk.END, "Processing... Please wait.\n")
+    cracking_output_text.insert(tk.END, f"🔐 Cracking with format: {hash_format}\n")
     cracking_output_text.update()
 
-    # Run John the Ripper
-    cmd = f"john --wordlist={wordlist} {hash_file}"
+    cmd = f"john --format={hash_format} --wordlist={wordlist} {hash_file_to_use}"
     log_command(cmd)
-    cracking_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    status_thread = threading.Thread(target=lambda: check_cracking_status("John the Ripper"), daemon=True)
-    status_thread.start()
 
+    try:
+        cracking_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        threading.Thread(target=lambda: check_cracking_status("John the Ripper"), daemon=True).start()
+        stream_output(cracking_process)
+    except Exception as e:
+        cracking_output_text.insert(tk.END, f"🔥 Error launching John:\n{str(e)}\n")
 
-    stream_output(cracking_process)  # Display live output
 
 
 
@@ -1823,47 +1834,98 @@ def update_cme_status(tool_name):
 
 
 def run_hashcat():
-    """Runs Hashcat with user-defined command input"""
+    """Runs Hashcat with selected attack mode, hash mode, and optional mask"""
     global cracking_process
 
-    cmd = hashcat_command_entry.get().strip()  # Get full user input
-    status_thread = threading.Thread(target=lambda: check_cracking_status("Hashcat"), daemon=True)
-    status_thread.start()
+    # Extract fields from GUI
+    hash_file = hash_file_entry.get().strip()
+    wordlist = password_wordlist_entry.get().strip()
+    mask = hashcat_mask_entry.get().strip()
+    hash_mode = hash_mode_entry.get().strip()
 
+    # Extract just the attack mode value (e.g., "3" from "3 | Brute-force")
+    mode_raw = attack_mode.get().split(" | ")[0].strip()
 
-    if not cmd:
-        messagebox.showerror("Input Error", "Please enter a valid Hashcat command.")
+    # Validate required inputs
+    if not hash_file:
+        messagebox.showerror("Input Error", "⚠ Please specify a hash file or hash value.")
+        return
+    if not hash_mode:
+        messagebox.showerror("Input Error", "⚠ Please enter a Hash Mode (e.g., 0 for MD5, 1000 for NTLM).")
         return
 
+    # Build base command
+    cmd = f"hashcat -a {mode_raw} -m {hash_mode} {hash_file}"
+
+    # Attach appropriate inputs based on attack mode
+    if mode_raw == "3":
+        # Brute-force mode requires a mask but NO wordlist
+        if not mask:
+            messagebox.showerror("Input Error", "⚠ Mask is required for Brute-force mode (Attack Mode 3).")
+            return
+        cmd += f" {mask}"
+
+    elif mode_raw in ["0", "1", "6", "7", "9"]:
+        # These modes require a wordlist
+        if not wordlist:
+            messagebox.showerror("Input Error", f"⚠ Wordlist is required for Attack Mode {mode_raw}.")
+            return
+        cmd += f" {wordlist}"
+
+        # Hybrid modes require mask too
+        if mode_raw in ["6", "7"] and mask:
+            cmd += f" {mask}"
+
+    else:
+        messagebox.showerror("Input Error", f"⚠ Unsupported or unknown Attack Mode: {mode_raw}")
+        return
+
+    # Log and run
     cracking_output_text.delete("1.0", tk.END)
-    cracking_output_text.insert(tk.END, f"Running: {cmd}\n\n")
+    cracking_output_text.insert(tk.END, f"🚀 Running: {cmd}\n\n")
     cracking_output_text.update()
     log_command(cmd)
-
-    cracking_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stream_output(cracking_process)
+    #print(f"[DEBUG] Hashcat command: {cmd}")
 
 
+    try:
+        cracking_process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stream_output(cracking_process)
+    except Exception as e:
+        cracking_output_text.insert(tk.END, f"🔥 Error launching Hashcat:\n{str(e)}\n")
 
 
 
-def stream_output(process):    
-    cracking_output_text.delete("1.0", tk.END)  # Clear previous output
 
+
+
+def stream_output(process):
+    cracking_output_text.delete("1.0", tk.END)
+
+    # Stream both stdout and stderr
     while True:
         output_line = process.stdout.readline()
-        if not output_line and process.poll() is not None:
-            break  # Stops when the process finishes
+        error_line = process.stderr.readline()
 
-        cracking_output_text.insert(tk.END, output_line)
-        cracking_output_text.see(tk.END)  # Auto-scroll
-        cracking_output_text.update()  # Refresh GUI
+        if not output_line and not error_line and process.poll() is not None:
+            break
 
-    # Ensure process is fully closed before showing completion message
+        if output_line:
+            cracking_output_text.insert(tk.END, output_line)
+        if error_line:
+            cracking_output_text.insert(tk.END, error_line)
+
+        cracking_output_text.see(tk.END)
+        cracking_output_text.update()
+
     process.stdout.close()
+    process.stderr.close()
     process.wait()
-    
+
+    global cracking_process
+    cracking_process = None
     root.after(0, lambda: messagebox.showinfo("Scan Complete", "Password Cracking has finished Processing"))
+
 
 
 
@@ -2611,7 +2673,7 @@ core_security_menu_frame = tk.Frame( bg="#0A192F")
 tk.Label(core_security_menu_frame, text="Core Offensive Security", font=("Arial", 30, "bold"), fg="#FFD700", bg="#0F1B37").pack(pady=15)
 
 # Navigation buttons inside Core Offensive Security menu
-tk.Button(core_security_menu_frame, text="Scanning", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
+tk.Button(core_security_menu_frame, text="Reconnaissance", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
 tk.Button(core_security_menu_frame, text="Create Wordlist", command=lambda: switch_to_frame(wordlist_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
 tk.Button(core_security_menu_frame, text="Cracking", command=lambda: switch_to_frame(cracking_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
 tk.Button(core_security_menu_frame, text="Back to Main Menu", command=lambda: switch_to_frame(main_menu_frame), width=20, height=2, bg="#B71C1C", fg="white").pack(pady=10)
@@ -2619,12 +2681,12 @@ tk.Button(core_security_menu_frame, text="Back to Main Menu", command=lambda: sw
 
 # **** Core Security Submenu (Scanners) ****
 core_security_submenu_scanner_frame = tk.Frame(bg="#0A192F")
-tk.Label(core_security_submenu_scanner_frame, text="Scanner Tools", font=("Arial", 30, "bold"), fg="#FFD700", bg="#0F1B37").pack(pady=15)
+tk.Label(core_security_submenu_scanner_frame, text="Reconnaissance Tools", font=("Arial", 30, "bold"), fg="#FFD700", bg="#0F1B37").pack(pady=15)
 
 # **Navigation buttons for scanner tools**
-tk.Button(core_security_submenu_scanner_frame, text="Nmap Scanner", command=lambda: switch_to_frame(nmap_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
-tk.Button(core_security_submenu_scanner_frame, text="SMB Scanner", command=lambda: switch_to_frame(smb_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
-tk.Button(core_security_submenu_scanner_frame, text="Gobuster Scanner", command=lambda: switch_to_frame(gobuster_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
+tk.Button(core_security_submenu_scanner_frame, text="Nmap", command=lambda: switch_to_frame(nmap_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
+tk.Button(core_security_submenu_scanner_frame, text="SMB", command=lambda: switch_to_frame(smb_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
+tk.Button(core_security_submenu_scanner_frame, text="Gobuster", command=lambda: switch_to_frame(gobuster_menu_frame), width=20, height=2, bg="#1E88E5", fg="white").pack(pady=5)
 
 # **Back to Core Security Menu**
 tk.Button(core_security_submenu_scanner_frame, text="Core Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=20, height=2, bg="#B71C1C", fg="white").pack(pady=10)
@@ -2697,11 +2759,11 @@ forensics_base_frame.pack_propagate(False)
 
 
 # **Output Display Top Banner**
-tk.Label(nmap_menu_frame, text="Nmap Scanner", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
+tk.Label(nmap_menu_frame, text="Host & Port Scanner", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
 tk.Label(nmap_menu_frame, text="Scan Results:", font=("Arial", 14, "bold"), fg="#FFFFFF", bg="#0A192F").pack()
-tk.Label(smb_menu_frame, text="SMB Scanner", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
+tk.Label(smb_menu_frame, text="SMB Share Enumerator", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
 tk.Label(smb_menu_frame, text="Scan Results:", font=("Arial", 14, "bold"), fg="#FFFFFF", bg="#0A192F").pack()
-tk.Label(gobuster_menu_frame, text="Gobuster Scanner", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
+tk.Label(gobuster_menu_frame, text="Web Directory Scanner", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=8)
 tk.Label(gobuster_menu_frame, text="Scan Results:", font=("Arial", 14, "bold"), fg="#FFFFFF", bg="#0A192F").pack()
 tk.Label(wordlist_menu_frame, text="Hashcat Wordlist Modifier", font=("Arial", 25, "bold"), fg="#64B5F6", bg="#0A192F").pack(pady=12)
 
@@ -2819,7 +2881,7 @@ tk.Button(nmap_nav_buttons_frame, text="Clear", command=nmap_clear_output, width
 nmap_nav_back_buttons_frame = tk.Frame(nmap_menu_frame, bg="#0A192F")
 nmap_nav_back_buttons_frame.pack(pady=10)
 
-tk.Button(nmap_nav_back_buttons_frame, text="Scanning Tools Menu", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=50, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
+tk.Button(nmap_nav_back_buttons_frame, text="Back to Reconnaissance Tools", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=50, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(nmap_nav_back_buttons_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=50, height=2, bg="#FFD700", fg="white").pack(side=tk.LEFT, padx=5)
 
 
@@ -2868,7 +2930,7 @@ tk.Button(smbcommand_nav_buttons_frame, text="Clear", command=smb_clear_output, 
 # Back to Main Menu Button
 smb_nav_back_buttons_frame = tk.Frame(smb_menu_frame, bg="#0A192F")
 smb_nav_back_buttons_frame.pack(pady=10)
-tk.Button(smb_nav_back_buttons_frame, text="Back to Scanning Menu", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=50, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
+tk.Button(smb_nav_back_buttons_frame, text="Back to Reconnaissance Tools", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=50, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(smb_nav_back_buttons_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=50, height=2, bg="#FFD700", fg="white").pack(side=tk.LEFT, padx=5)
 
 
@@ -2915,7 +2977,7 @@ tk.Button(gobuster_nav_buttons_frame, text="Clear", command=gobuster_clear_outpu
 # Back Buttons
 gobuster_nav_back_buttons_frame = tk.Frame(gobuster_menu_frame, bg="#0A192F")
 gobuster_nav_back_buttons_frame.pack(pady=10)
-tk.Button(gobuster_nav_back_buttons_frame, text="Back to Scanning Menu", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=35, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
+tk.Button(gobuster_nav_back_buttons_frame, text="Back to Reconnaissance Tools", command=lambda: switch_to_frame(core_security_submenu_scanner_frame), width=35, height=2, bg="#00897B", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(gobuster_nav_back_buttons_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=35, height=2, bg="#FFD700", fg="white").pack(side=tk.LEFT, padx=5)
 
 
@@ -2961,6 +3023,31 @@ tk.Button(wordlist_menu_frame, text="Core Offensive Security Menu", command=lamb
 
 tk.Label(cracking_menu_frame, text="Enter IP Address:", font=("Arial", 12), fg="#64B5F6", bg="#0A192F").pack()
 
+# Frame for Protocol & Port Entries (Ensures Proper Layout)
+protocol_ports_nav_buttons_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
+protocol_ports_nav_buttons_frame.pack(pady=5)
+
+# Protocol Label & Entry
+protocol_frame = tk.Frame(protocol_ports_nav_buttons_frame, bg="#0A192F")
+protocol_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(protocol_frame, text="Enter Protocol:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+
+
+protocol_entry = tk.Entry(protocol_frame, width=25, bg="#333333", fg="white")
+protocol_entry.pack()
+
+# Port Label & Entry
+cracking_port_frame = tk.Frame(protocol_ports_nav_buttons_frame, bg="#0A192F")
+cracking_port_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(cracking_port_frame, text="Enter Port (other than default:)", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+cracking_port_entry = tk.Entry(cracking_port_frame, width=25, bg="#333333", fg="white")
+cracking_port_entry.pack()
+
+
+
+
 # Entry for general cracking tool options
 
 
@@ -2976,50 +3063,114 @@ tk.Button(cracking_nav_hash_buttons_frame, text="Hash-Identifier", command=run_h
 
 
 
-# Frame for Protocol & Port Entries (Ensures Proper Layout)
-protocol_ports_nav_buttons_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
-protocol_ports_nav_buttons_frame.pack(pady=10)
 
-# Protocol Label & Entry
-protocol_frame = tk.Frame(protocol_ports_nav_buttons_frame, bg="#0A192F")
-protocol_frame.pack(side=tk.LEFT, padx=5)
+# Frame to contain both format menu and custom format entry
+format_group_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
+format_group_frame.pack(pady=5)
 
-tk.Label(protocol_frame, text="Enter Protocol:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-protocol_entry = tk.Entry(protocol_frame, width=25, bg="#333333", fg="white")
-protocol_entry.pack()
+# === Format Selection Column ===
+format_select_frame = tk.Frame(format_group_frame, bg="#0A192F")
+format_select_frame.pack(side=tk.LEFT, padx=5)
 
-# Port Label & Entry
-cracking_port_frame = tk.Frame(protocol_ports_nav_buttons_frame, bg="#0A192F")
-cracking_port_frame.pack(side=tk.LEFT, padx=5)
+tk.Label(format_select_frame, text="Select John Format:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+selected_format = tk.StringVar()
+JTR_FORMATS = [
+    "raw-md5", "raw-sha1", "raw-sha256", "raw-sha512", "nt", "lm", "ntlm", "bcrypt", "Not Listed (Enter Manually)"
+]
+selected_format.set(JTR_FORMATS[0])
 
-tk.Label(cracking_port_frame, text="Enter Port (if not using default:)", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-cracking_port_entry = tk.Entry(cracking_port_frame, width=25, bg="#333333", fg="white")
-cracking_port_entry.pack()
+format_menu = ttk.Combobox(format_select_frame, textvariable=selected_format, values=JTR_FORMATS, state="readonly", width=28)
+format_menu.pack(pady=5)
+
+# === Custom Format Column ===
+custom_format_frame = tk.Frame(format_group_frame, bg="#0A192F")
+custom_format_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(custom_format_frame, text="Custom Format (if not listed):", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+custom_format_entry = tk.Entry(custom_format_frame, width=28, bg="#333333", fg="white")
+custom_format_entry.pack(pady=5)
+custom_format_entry.config(state=tk.DISABLED)
+
+# Enable/disable entry based on dropdown selection
+def handle_format_selection(event=None):
+    if selected_format.get() == "Not Listed (Enter Manually)":
+        custom_format_entry.config(state=tk.NORMAL)
+    else:
+        custom_format_entry.delete(0, tk.END)
+        custom_format_entry.config(state=tk.DISABLED)
+
+format_menu.bind("<<ComboboxSelected>>", handle_format_selection)
 
 
-# Entry for user wordlist selection
-tk.Label(cracking_menu_frame, text="User or Wordlist:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-user_wordlist_entry = tk.Entry(cracking_menu_frame, width=50, bg="#333333", fg="white")
-user_wordlist_entry.pack(pady=5)
-tk.Button(cracking_menu_frame, text="Browse User Wordlist", command=lambda: cracking_user_wordlist(user_wordlist_entry), width=50, height=1, bg="#757575", fg="white").pack()
 
-# Entry for password wordlist selection
-tk.Label(cracking_menu_frame, text="Password or Wordlist:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-password_wordlist_entry = tk.Entry(cracking_menu_frame, width=50, bg="#333333", fg="white")
-password_wordlist_entry.pack(pady=5)
-tk.Button(cracking_menu_frame, text="Browse Password Wordlist", command=lambda: cracking_pass_wordlist(password_wordlist_entry), width=50, height=1, bg="#757575", fg="white").pack()
+#**Hashcat**
+
+# Container frame for side-by-side inputs
+hashcat_options_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
+hashcat_options_frame.pack(pady=5)
+
+# === Attack Mode Column ===
+attack_mode_frame = tk.Frame(hashcat_options_frame, bg="#0A192F")
+attack_mode_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(attack_mode_frame, text="Attack Mode:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+attack_mode = tk.StringVar()
+attack_modes = [
+    "0 | Straight", "1 | Combination", "3 | Brute-force",
+    "6 | Hybrid Wordlist + Mask", "7 | Hybrid Mask + Wordlist", "9 | Association"
+]
+attack_mode.set(attack_modes[0])
+attack_menu = ttk.Combobox(attack_mode_frame, textvariable=attack_mode, values=attack_modes, state="readonly", width=28)
+attack_menu.pack(pady=3)
+
+# === Hash Mode Column ===
+hash_mode_frame = tk.Frame(hashcat_options_frame, bg="#0A192F")
+hash_mode_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(hash_mode_frame, text="Hash Mode:e.g. 0, 100", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+hash_mode_entry = tk.Entry(hash_mode_frame, width=28, bg="#333333", fg="white")
+hash_mode_entry.pack(pady=3)
+
+# === Custom Charset Column ===
+charset_frame = tk.Frame(hashcat_options_frame, bg="#0A192F")
+charset_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(charset_frame, text="Custom Charset / Mask e.g. ?d?l?H", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+hashcat_mask_entry = tk.Entry(charset_frame, width=28, bg="#333333", fg="white")
+hashcat_mask_entry.pack(pady=3)
+
+
+
+# Container frame for horizontal layout
+wordlist_pair_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
+wordlist_pair_frame.pack(pady=5)
+
+# === USER WORDLIST SECTION ===
+user_wordlist_frame = tk.Frame(wordlist_pair_frame, bg="#0A192F")
+user_wordlist_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(user_wordlist_frame, text="User or Wordlist:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+user_wordlist_entry = tk.Entry(user_wordlist_frame, width=30, bg="#333333", fg="white")
+user_wordlist_entry.pack(pady=3)
+tk.Button(user_wordlist_frame, text="Browse", command=lambda: cracking_user_wordlist(user_wordlist_entry), width=20, bg="#757575", fg="white").pack()
+
+# === PASSWORD WORDLIST SECTION ===
+pass_wordlist_frame = tk.Frame(wordlist_pair_frame, bg="#0A192F")
+pass_wordlist_frame.pack(side=tk.LEFT, padx=5)
+
+tk.Label(pass_wordlist_frame, text="Password or Wordlist:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
+password_wordlist_entry = tk.Entry(pass_wordlist_frame, width=30, bg="#333333", fg="white")
+password_wordlist_entry.pack(pady=3)
+tk.Button(pass_wordlist_frame, text="Browse", command=lambda: cracking_pass_wordlist(password_wordlist_entry), width=20, bg="#757575", fg="white").pack()
+
 
 tk.Label(cracking_menu_frame, text="Manual Cracking:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
 tool_option_entry = tk.Entry(cracking_menu_frame, width=50, bg="#333333", fg="white", font="bold")
 tool_option_entry.pack()
 tool_option_entry.bind("<Tab>", autocomplete_path)  # Enable inline file path completion
 
-tk.Label(cracking_menu_frame, text="Hashcat Command:", font=("Arial", 12), fg="white", bg="#0A192F").pack()
-hashcat_command_entry = tk.Entry(cracking_menu_frame, width=50)
-hashcat_command_entry.pack(pady=5)
-
 tools_nav_buttons_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
-tools_nav_buttons_frame.pack(pady=10)
+tools_nav_buttons_frame.pack(pady=5)
 
 tk.Button(tools_nav_buttons_frame, text="John the Ripper", command=lambda: start_crack(run_john), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(tools_nav_buttons_frame, text="Hydra", command=lambda: start_crack(run_hydra), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
@@ -3027,8 +3178,8 @@ tk.Button(tools_nav_buttons_frame, text="CrackMapExec", command=lambda: start_cr
 tk.Button(tools_nav_buttons_frame, text="Hashcat", command=lambda: start_crack(run_hashcat), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(tools_nav_buttons_frame, text="Manual Cracking Options", command=lambda: start_crack(custom_crack), width=20, height=1, bg="#1565C0", fg="white").pack(side=tk.LEFT, padx=5)
 
-cracking_status_label = tk.Label(cracking_menu_frame, text="Status: ⏳ Waiting for execution...", font=("Arial", 12), fg="yellow", bg="#0A192F")
-cracking_status_label.pack()
+'''cracking_status_label = tk.Label(cracking_menu_frame, text="Status: ⏳ Waiting for execution...", font=("Arial", 12), fg="yellow", bg="#0A192F")
+cracking_status_label.pack()'''
 
 
 # **Action Buttons**
@@ -3044,7 +3195,7 @@ cracking_status_label.pack()
 #Password Cracking
 
 nav_buttons_frame = tk.Frame(cracking_menu_frame, bg="#0A192F")
-nav_buttons_frame.pack(pady=10)
+nav_buttons_frame.pack(pady=5)
 tk.Button(nav_buttons_frame, text="Clear", command=cracking_clear_output, width=20, height=1, bg="#FF5722", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(nav_buttons_frame, text="Cancel Scan", command=cracking_cancel_scan, width=20, height=1, bg="#D32F2F", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(nav_buttons_frame, text="Core Offensive Security Menu", command=lambda: switch_to_frame(core_security_menu_frame), width=30, height=1, bg="#FFD700", fg="white").pack(side=tk.LEFT, padx=5)
@@ -3165,19 +3316,6 @@ forensics_nav_base_buttons_frame.pack(pady=10)
 tk.Button(forensics_nav_base_buttons_frame, text="Clear", command=forensics_base_clear_output, width=20, height=2, bg="#29B6F6", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(forensics_nav_base_buttons_frame, text="Save Output", command=export_base_output, width=20, height=2, bg="#43A047", fg="white").pack(side=tk.LEFT, padx=5)
 tk.Button(forensics_nav_base_buttons_frame, text="Back to Forensics Menu", command=lambda: switch_to_frame(forensics_submenu_frame), width=20, height=2, bg="#B71C1C", fg="white").pack(side=tk.LEFT, padx=5)
-
-
-
-
-
-
-#tk.Button(forensics_log_frame, text="Run Custom Pipeline", command=run_forensics_log_custom_pipeline, width=20, height=2, bg="#29B6F6", fg="white").pack()
-
-
-
-
-
-
 
 
 
