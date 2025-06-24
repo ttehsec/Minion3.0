@@ -29,7 +29,6 @@ Minion is a beginner-friendly, CTF-ready security toolkit that helps you decode 
 - Deduplication, transform trail tracking, and readability scoring
 - Recursive decoding paths with auto-prioritized scoring
 - Real word detection via built-in Kali wordlist
-- Color-coded confidence: ✅ `[✓]` `[~]`
 - Smart filters: deduplication, path chaining, confidence tagging
 
 ### Offensive Security
