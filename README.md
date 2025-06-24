@@ -62,5 +62,5 @@ Minion is a beginner-friendly, CTF-ready security toolkit that helps you decode 
 
 ```bash
 [git clone https://github.com/ttehsec/Minion3.0.git]
-cd minion
+cd Minion3.0
 python3 minionGUI.py
